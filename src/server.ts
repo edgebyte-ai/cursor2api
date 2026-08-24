@@ -10,9 +10,13 @@ import http from "node:http";
 import type { Config } from "./config.js";
 import type { CursorUpstreamError } from "./cursor/errors.js";
 import type { AccountPool } from "./auth.js";
-import { listModelIds, toModelList, upstreamId } from "./models.js";
+import { listModelIds, resolveModel, toModelList } from "./models.js";
 import { runTurn, type TurnEvent } from "./cursor/session.js";
-import { buildTurnInput, type OpenAIChatRequest } from "./openai/translate.js";
+import {
+  buildTurnInput,
+  reasoningEffortOf,
+  type OpenAIChatRequest,
+} from "./openai/translate.js";
 import { openAIErrorResponse } from "./openai/errors.js";
 
 export interface ServerDeps {
@@ -48,7 +52,15 @@ async function handle(req: http.IncomingMessage, res: http.ServerResponse, deps:
   if (route === "GET /v1/models") {
     const account = await deps.pool.next();
     const ids = await listModelIds(account.accessToken, deps.config);
-    sendJson(res, 200, { object: "list", data: toModelList(ids, deps.config.modelPrefix) });
+    sendJson(res, 200, {
+      object: "list",
+      data: toModelList(
+        ids,
+        deps.config.modelPrefix,
+        deps.config.modelMode,
+        deps.config.defaultReasoningEffort,
+      ),
+    });
     return;
   }
 
@@ -86,12 +98,31 @@ async function chatCompletions(
   const account = await pool.next();
   const known = await listModelIds(account.accessToken, config);
   const clientModel = body.model ?? `${config.modelPrefix}auto`;
-  const model = upstreamId(clientModel, config.modelPrefix, known);
+  const resolution = resolveModel(clientModel, config, known, reasoningEffortOf(body));
+  if (!resolution.upstreamId) {
+    const unsupportedEffort = resolution.error === "unsupported_reasoning_effort";
+    sendJson(res, 400, {
+      error: {
+        message: unsupportedEffort
+          ? `reasoning effort is not supported for ${clientModel}`
+          : `unknown model ${clientModel}`,
+        type: "invalid_request_error",
+        code: resolution.error ?? "model_not_found",
+        param: unsupportedEffort ? "reasoning_effort" : "model",
+        ...(resolution.supportedEfforts
+          ? { supported_reasoning_efforts: resolution.supportedEfforts }
+          : {}),
+      },
+    });
+    return;
+  }
+  const model = resolution.upstreamId;
   const input = buildTurnInput(body, config);
 
   if (config.logRequests) {
     log(
       `chat account=${account.label} model=${model} history=${input.rootMessages.length} ` +
+        `effort=${resolution.effort ?? reasoningEffortOf(body) ?? "fixed"} ` +
         `tools=${input.tools.length} stream=${Boolean(body.stream)} ` +
         `action=${input.userText.trim() ? "user" : "resume"}`,
     );

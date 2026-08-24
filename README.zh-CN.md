@@ -95,6 +95,12 @@ access token 有效期约两个月，到期前会用 refresh token 自动续，�
 模型名 = 上游 id 加 `cursor-` 前缀（设 `CURSOR_DIRECT_MODEL_PREFIX=` 可关掉）。
 `GET /v1/models` 返回你账号实际能用的全部模型。
 
+设 `CURSOR_DIRECT_MODEL_MODE=normalized` 后，客户端模型名会去掉 effort，但保留
+`thinking` 和 `fast` 这两个独立维度。请求里的 `reasoning_effort` 决定真正的 Cursor
+上游 ID，例如 `cursor-grok-4.6` 加 `reasoning_effort="high"` 会路由到
+`cursor-grok-4.6-high`。不支持的档位返回 HTTP 400，不会偷偷换档。迁移时可用
+`both` 同时暴露原始名和正规化名。
+
 ```python
 from openai import OpenAI
 
@@ -160,6 +166,8 @@ resp.choices[0].message.tool_calls[0].function.arguments   # '{"city":"Osaka"}'
 | `CURSOR_DIRECT_API_KEY` | — | 要求 `Authorization: Bearer <key>`。**端口不只是 localhost 可达时务必设置。** |
 | `CURSOR_DIRECT_AUTH_FILE` | `./accounts.json` | 账号 / token 存储 |
 | `CURSOR_DIRECT_MODEL_PREFIX` | `cursor-` | 暴露的模型名前缀 |
+| `CURSOR_DIRECT_MODEL_MODE` | `raw` | 原始名 `raw`、effort 正规化 `normalized`，或迁移模式 `both` |
+| `CURSOR_DIRECT_DEFAULT_REASONING_EFFORT` | 随模型决定 | 正规化请求没传 effort 时优先使用的档位 |
 | `CURSOR_ALLOWED_NATIVE_TOOLS` | `mcp_tool_call` | 允许模型看到哪些 Cursor 原生工具，`*` = 全部 41 个 |
 | `CURSOR_DIRECT_PROXY_URL` | — | 全部上游流量走 SOCKS5，如 `socks5://127.0.0.1:1080` |
 | `CURSOR_DIRECT_CLIENT_VERSION` | `cli-2026.08.11-…` | Cursor 卡旧客户端版本时改这里 |

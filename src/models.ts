@@ -8,7 +8,7 @@
  */
 import protobuf from "protobufjs";
 import path from "node:path";
-import type { Config } from "./config.js";
+import type { Config, ModelMode } from "./config.js";
 import { protoDir } from "./cursor/proto.js";
 import { unaryCall } from "./cursor/unary.js";
 
@@ -58,6 +58,134 @@ export function upstreamId(name: string, prefix: string, known: readonly string[
   return trimmed;
 }
 
+export const REASONING_EFFORTS = ["none", "minimal", "low", "medium", "high", "xhigh", "max"] as const;
+export type ReasoningEffort = (typeof REASONING_EFFORTS)[number];
+const EFFORT_SET = new Set<string>(REASONING_EFFORTS);
+const DEFAULT_EFFORT_ORDER: readonly ReasoningEffort[] = [
+  "medium",
+  "high",
+  "low",
+  "xhigh",
+  "none",
+  "minimal",
+  "max",
+];
+
+export interface NormalizedModelFamily {
+  id: string;
+  variants: Map<ReasoningEffort, string>;
+  fixedUpstreamId?: string;
+  defaultEffort?: ReasoningEffort;
+}
+
+/** Remove one trailing modifier token that encodes reasoning effort, preserving thinking/fast. */
+export function parseModelVariant(id: string): { familyId: string; effort?: ReasoningEffort } {
+  const parts = id.split("-");
+  let effortIndex = -1;
+  for (let i = parts.length - 1; i >= Math.max(0, parts.length - 4); i--) {
+    if (EFFORT_SET.has(parts[i]!)) {
+      effortIndex = i;
+      break;
+    }
+    if (parts[i] !== "thinking" && parts[i] !== "fast") break;
+  }
+  if (effortIndex < 0) return { familyId: id };
+  const effort = parts[effortIndex] as ReasoningEffort;
+  return { familyId: parts.filter((_, index) => index !== effortIndex).join("-"), effort };
+}
+
+function chooseDefaultEffort(
+  variants: Map<ReasoningEffort, string>,
+  preferred?: string,
+): ReasoningEffort | undefined {
+  if (preferred && EFFORT_SET.has(preferred) && variants.has(preferred as ReasoningEffort)) {
+    return preferred as ReasoningEffort;
+  }
+  for (const effort of DEFAULT_EFFORT_ORDER) if (variants.has(effort)) return effort;
+  return undefined;
+}
+
+export function normalizedModelFamilies(
+  ids: readonly string[],
+  preferredEffort?: string,
+): Map<string, NormalizedModelFamily> {
+  const families = new Map<string, NormalizedModelFamily>();
+  for (const id of ids) {
+    const parsed = parseModelVariant(id);
+    let family = families.get(parsed.familyId);
+    if (!family) {
+      family = { id: parsed.familyId, variants: new Map() };
+      families.set(parsed.familyId, family);
+    }
+    if (parsed.effort) {
+      if (!family.variants.has(parsed.effort)) family.variants.set(parsed.effort, id);
+    } else {
+      family.fixedUpstreamId ??= id;
+    }
+  }
+  for (const family of families.values()) {
+    family.defaultEffort = chooseDefaultEffort(family.variants, preferredEffort);
+  }
+  return families;
+}
+
+export interface ModelResolution {
+  upstreamId?: string;
+  familyId?: string;
+  effort?: ReasoningEffort;
+  supportedEfforts?: ReasoningEffort[];
+  error?: "unsupported_reasoning_effort" | "model_not_found";
+}
+
+function clientCandidates(name: string, prefix: string): string[] {
+  const trimmed = name.trim();
+  if (!prefix || !trimmed.startsWith(prefix)) return [trimmed];
+  const stripped = trimmed.slice(prefix.length);
+  return stripped && stripped !== trimmed ? [trimmed, stripped] : [trimmed];
+}
+
+export function resolveModel(
+  name: string,
+  config: Pick<Config, "modelPrefix" | "modelMode" | "defaultReasoningEffort">,
+  known: readonly string[],
+  requestedEffort?: string,
+): ModelResolution {
+  const candidates = clientCandidates(name, config.modelPrefix);
+  if (config.modelMode !== "normalized") {
+    for (const candidate of candidates) {
+      if (known.includes(candidate)) return { upstreamId: candidate };
+    }
+  }
+
+  const families = normalizedModelFamilies(known, config.defaultReasoningEffort);
+  let family: NormalizedModelFamily | undefined;
+  for (const candidate of candidates) {
+    family = families.get(candidate);
+    if (family) break;
+  }
+  if (!family) {
+    if (config.modelMode === "normalized") return { error: "model_not_found" };
+    return { upstreamId: upstreamId(name, config.modelPrefix, known) };
+  }
+
+  if (family.variants.size === 0) {
+    return { upstreamId: family.fixedUpstreamId ?? family.id, familyId: family.id };
+  }
+  const supportedEfforts = REASONING_EFFORTS.filter((effort) => family!.variants.has(effort));
+  const effort = requestedEffort?.trim().toLowerCase();
+  if (effort && (!EFFORT_SET.has(effort) || !family.variants.has(effort as ReasoningEffort))) {
+    return { familyId: family.id, supportedEfforts, error: "unsupported_reasoning_effort" };
+  }
+  const selected = (effort as ReasoningEffort | undefined) ?? family.defaultEffort;
+  if (!selected) return { familyId: family.id, supportedEfforts, error: "model_not_found" };
+  return {
+    upstreamId: family.variants.get(selected),
+    familyId: family.id,
+    effort: selected,
+    supportedEfforts,
+  };
+}
+
 export async function listModelIds(token: string, config: Config): Promise<string[]> {
   if (cache && Date.now() - cache.at < CACHE_TTL_MS) return cache.ids;
   try {
@@ -90,17 +218,50 @@ export interface OpenAIModelEntry {
   object: "model";
   created: number;
   owned_by: string;
+  reasoning_efforts?: ReasoningEffort[];
+  default_reasoning_effort?: ReasoningEffort;
 }
 
-export function toModelList(ids: readonly string[], prefix: string): OpenAIModelEntry[] {
+function addModelEntry(
+  out: OpenAIModelEntry[],
+  seen: Set<string>,
+  id: string,
+  prefix: string,
+  created: number,
+  family?: NormalizedModelFamily,
+): void {
+  const name = clientName(id, prefix);
+  if (seen.has(name)) return;
+  seen.add(name);
+  const efforts = family
+    ? REASONING_EFFORTS.filter((effort) => family.variants.has(effort))
+    : [];
+  out.push({
+    id: name,
+    object: "model",
+    created,
+    owned_by: "cursor",
+    ...(efforts.length > 0 ? { reasoning_efforts: efforts } : {}),
+    ...(family?.defaultEffort ? { default_reasoning_effort: family.defaultEffort } : {}),
+  });
+}
+
+export function toModelList(
+  ids: readonly string[],
+  prefix: string,
+  mode: ModelMode = "raw",
+  preferredEffort?: string,
+): OpenAIModelEntry[] {
   const created = Math.floor(Date.now() / 1000);
   const seen = new Set<string>();
   const out: OpenAIModelEntry[] = [];
-  for (const id of ids) {
-    const name = clientName(id, prefix);
-    if (seen.has(name)) continue;
-    seen.add(name);
-    out.push({ id: name, object: "model", created, owned_by: "cursor" });
+  if (mode === "raw" || mode === "both") {
+    for (const id of ids) addModelEntry(out, seen, id, prefix, created);
+  }
+  if (mode === "normalized" || mode === "both") {
+    for (const family of normalizedModelFamilies(ids, preferredEffort).values()) {
+      addModelEntry(out, seen, family.id, prefix, created, family);
+    }
   }
   return out;
 }

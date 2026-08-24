@@ -26,10 +26,17 @@ export interface OpenAIMessage {
 
 export interface OpenAIChatRequest {
   model?: string;
+  reasoning_effort?: string;
+  reasoning?: { effort?: string };
   messages?: OpenAIMessage[];
   stream?: boolean;
   tools?: Array<{ type?: string; function?: { name?: string; description?: string; parameters?: unknown } }>;
   tool_choice?: unknown;
+}
+
+export function reasoningEffortOf(body: OpenAIChatRequest): string | undefined {
+  const value = body.reasoning_effort ?? body.reasoning?.effort;
+  return typeof value === "string" && value.trim() ? value.trim().toLowerCase() : undefined;
 }
 
 export interface TurnInput {

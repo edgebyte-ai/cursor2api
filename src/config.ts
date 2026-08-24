@@ -47,6 +47,13 @@ function list(name: string, fallback: string[]): string[] {
  */
 export const DEFAULT_ALLOWED_TOOLS = ["mcp_tool_call"];
 
+export type ModelMode = "raw" | "normalized" | "both";
+
+function modelMode(name: string, fallback: ModelMode): ModelMode {
+  const value = str(name, fallback).trim().toLowerCase();
+  return value === "normalized" || value === "both" || value === "raw" ? value : fallback;
+}
+
 export interface Config {
   host: string;
   port: number;
@@ -68,6 +75,10 @@ export interface Config {
   allowedNativeTools: string[];
   /** Client-visible model prefix. CPA exposes these names verbatim. */
   modelPrefix: string;
+  /** Whether the catalogue exposes raw Cursor IDs, normalized effort families, or both. */
+  modelMode: ModelMode;
+  /** Preferred effort when a normalized family is requested without one. */
+  defaultReasoningEffort: string | undefined;
   /** Path to the JSON token store (array of accounts). */
   authFile: string;
   requestTimeoutMs: number;
@@ -99,6 +110,8 @@ export function loadConfig(): Config {
         ? []
         : list("CURSOR_ALLOWED_NATIVE_TOOLS", DEFAULT_ALLOWED_TOOLS),
     modelPrefix: str("CURSOR_DIRECT_MODEL_PREFIX", "cursor-"),
+    modelMode: modelMode("CURSOR_DIRECT_MODEL_MODE", "raw"),
+    defaultReasoningEffort: process.env.CURSOR_DIRECT_DEFAULT_REASONING_EFFORT?.trim() || undefined,
     authFile: str("CURSOR_DIRECT_AUTH_FILE", "./accounts.json"),
     requestTimeoutMs: num("CURSOR_DIRECT_TIMEOUT_MS", 300_000),
     systemAsHistory: bool("CURSOR_DIRECT_SYSTEM_AS_HISTORY", true),

@@ -17,7 +17,8 @@ server.listen(config.port, config.host, () => {
   log(
     `cursor2api listening on http://${config.host}:${config.port} ` +
       `upstream=${config.cursorBaseUrl} prefix="${config.modelPrefix}" ` +
-      `accounts=${pool.size()} allowed-native-tools=${config.allowedNativeTools.join(",") || "(all)"} ` +
+      `accounts=${pool.size()} model-mode=${config.modelMode} ` +
+      `allowed-native-tools=${config.allowedNativeTools.join(",") || "(all)"} ` +
       `proxy=${config.proxyUrl ?? "direct"}`,
   );
 });
