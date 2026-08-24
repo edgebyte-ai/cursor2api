@@ -100,6 +100,13 @@ token, so a one-time login is normally all you need.
 Model names are the upstream ids with a `cursor-` prefix (`CURSOR_DIRECT_MODEL_PREFIX=`
 to disable). `GET /v1/models` lists whatever your account can actually reach.
 
+Set `CURSOR_DIRECT_MODEL_MODE=normalized` to remove effort from client-visible model
+names while preserving `thinking` and `fast` as separate variants. The request's
+`reasoning_effort` then selects the exact upstream Cursor ID. For example,
+`cursor-grok-4.6` plus `reasoning_effort="high"` routes to
+`cursor-grok-4.6-high`. Unsupported levels return HTTP 400 rather than silently
+changing effort. `both` exposes raw and normalized names together for migration.
+
 ```python
 from openai import OpenAI
 
@@ -170,6 +177,8 @@ All env vars, all optional.
 | `CURSOR_DIRECT_API_KEY` | — | Require `Authorization: Bearer <key>`. **Set this if the port is reachable from anywhere but localhost.** |
 | `CURSOR_DIRECT_AUTH_FILE` | `./accounts.json` | Account/token store |
 | `CURSOR_DIRECT_MODEL_PREFIX` | `cursor-` | Prefix on exposed model names |
+| `CURSOR_DIRECT_MODEL_MODE` | `raw` | `raw`, effort-normalized `normalized`, or migration mode `both` |
+| `CURSOR_DIRECT_DEFAULT_REASONING_EFFORT` | model-dependent | Preferred effort when a normalized request omits it |
 | `CURSOR_ALLOWED_NATIVE_TOOLS` | `mcp_tool_call` | Which of Cursor's native tools the model may see. `*` keeps all 41. |
 | `CURSOR_DIRECT_PROXY_URL` | — | SOCKS5 for all upstream traffic, e.g. `socks5://127.0.0.1:1080` |
 | `CURSOR_DIRECT_CLIENT_VERSION` | `cli-2026.08.11-…` | Bump if Cursor version-gates old clients |
