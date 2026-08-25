@@ -133,6 +133,11 @@ resp = client.chat.completions.create(
 resp.choices[0].message.tool_calls[0].function.arguments   # '{"city":"Osaka"}'
 ```
 
+`GET /v1/quota` returns Cursor's two monthly quota groups using its dashboard usage
+data: `cursor-native` (Auto/Composer/Cursor models) and `other-models` (named API
+models). Each row includes the used percentage and billing-cycle reset time when
+Cursor supplies them.
+
 Anything that speaks OpenAI works: Cline, Roo, Continue, LobeChat, one-api, your own
 scripts. If you aggregate several subscription providers behind
 [CLIProxyAPI](https://github.com/router-for-me/CLIProxyAPI), see

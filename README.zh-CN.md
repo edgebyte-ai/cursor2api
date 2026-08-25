@@ -127,6 +127,10 @@ resp = client.chat.completions.create(
 resp.choices[0].message.tool_calls[0].function.arguments   # '{"city":"Osaka"}'
 ```
 
+`GET /v1/quota` 返回 Cursor 的两个月度额度组：`cursor-native`（Auto、Composer
+和 Cursor 自有模型）与 `other-models`（其它命名 API 模型）。Cursor 提供数据时，
+每行包含已用百分比和账单周期重置时间。
+
 任何吃 OpenAI 格式的东西都能接：Cline、Roo、Continue、LobeChat、one-api，或者你自己的
 脚本。如果你用 [CLIProxyAPI](https://github.com/router-for-me/CLIProxyAPI) 聚合多个
 订阅型 provider，见 [docs/deploy-behind-cliproxyapi.md](docs/deploy-behind-cliproxyapi.md)。

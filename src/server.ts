@@ -18,6 +18,7 @@ import {
   type OpenAIChatRequest,
 } from "./openai/translate.js";
 import { openAIErrorResponse } from "./openai/errors.js";
+import { getCursorQuota } from "./quota.js";
 
 export interface ServerDeps {
   config: Config;
@@ -61,6 +62,22 @@ async function handle(req: http.IncomingMessage, res: http.ServerResponse, deps:
         deps.config.defaultReasoningEffort,
       ),
     });
+    return;
+  }
+
+  if (route === "GET /v1/quota") {
+    const account = await deps.pool.next();
+    try {
+      sendJson(res, 200, await getCursorQuota(account.label, account.accessToken, deps.config));
+    } catch (err) {
+      sendJson(res, 502, {
+        error: {
+          message: (err as Error).message,
+          type: "upstream_error",
+          code: "quota_unavailable",
+        },
+      });
+    }
     return;
   }
 
