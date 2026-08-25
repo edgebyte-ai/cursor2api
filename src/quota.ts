@@ -206,8 +206,8 @@ export function normalizeCursorQuota(
   return {
     id,
     quota: [
-      quotaRow("cursor-native", "Cursor Native", cursorNative, timing),
-      quotaRow("other-models", "Other Models", otherModels, timing),
+      quotaRow("cursor-native", "cursor-native", cursorNative, timing),
+      quotaRow("other-models", "other-models", otherModels, timing),
     ],
     subscription: { provider: "cursor", plan },
     source,

@@ -23,6 +23,8 @@ test("normalizes Cursor's two quota groups from dashboard usage", () => {
   assert.equal(result.source, "dashboard+usage-summary");
   assert.deepEqual(result.subscription, { provider: "cursor", plan: "pro" });
   assert.deepEqual(result.quota.map((row) => row.key), ["cursor-native", "other-models"]);
+  assert.deepEqual(result.quota.map((row) => row.label), ["cursor-native", "other-models"]);
+  assert.deepEqual(result.quota.map((row) => row.groupLabel), ["cursor-native", "other-models"]);
   assert.equal(result.quota[0]?.usedPercent, 20.69777777777778);
   assert.ok(Math.abs((result.quota[0]?.remainingFraction ?? 0) - 0.7930222222222222) < 1e-12);
   assert.equal(result.quota[0]?.limitReached, false);
